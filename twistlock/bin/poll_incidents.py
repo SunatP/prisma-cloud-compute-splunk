@@ -12,6 +12,9 @@ import re
 import sys
 
 import requests
+import datetime as dt
+import dateutil.parser
+import dateutil.tz
 
 from utils.compute import get_auth_token, get_projects, slash_join
 from utils.splunk_sdk import generate_configs
@@ -35,6 +38,7 @@ except OSError:
 
 
 def get_incidents(console_name, console_url, project_list, auth_token):
+    # v1 refered to latest API version
     endpoint = "/api/v1/audits/incidents"
     headers = {
         "Authorization": "Bearer " + auth_token,
@@ -54,15 +58,21 @@ def get_incidents(console_name, console_url, project_list, auth_token):
             + project.replace(" ", "-").lower()
             + "_serialNum_checkpoint.txt")
         # If the checkpoint file exists, use it. If not, start at 0.
+        # Serial num is deleted in latest API (22.06)
         if os.path.isfile(checkpoint_file):
             with open(checkpoint_file) as f:
                 try:
-                    last_serialNum_indexed = int(f.readline())
+                    # last_serialNum_indexed = int(f.readline())
+                    last_date_indexed = dateutil.parser.parser(f.readline())
+                    last_date_string_indexed = str(f.readline())
                 except Exception as err:
                     logger.error("Unexpected content in checkpoint file. Exiting.")
                     sys.exit(err)
         else:
-            last_serialNum_indexed = 0
+            # last_serialNum_indexed = 0
+            # get last date of incident by computed with last 90 days
+            last_date_indexed = dt.datetime.now(dateutil.tz.UTC) - dt.timedelta(days=90)
+            
 
         # Make a call to get count of incidents
         params = {
@@ -86,7 +96,8 @@ def get_incidents(console_name, console_url, project_list, auth_token):
             logger.warning("No incidents to ingest for %s. Continuing.", project)
             continue
 
-        highest_serialNum = 0
+        oldest_date = dt.datetime.now(dateutil.tz.UTC) - dt.timedelta(days=90)
+        # highest_serialNum = 0
         # Use that count to create offsets
         # Example: 85 incidents
         # offset: 0, limit: 50 = 1-50
@@ -98,6 +109,7 @@ def get_incidents(console_name, console_url, project_list, auth_token):
                 "acknowledged": "false",
                 "limit": request_limit,
                 "offset": request_offset,
+                "from": last_date_string_indexed,
             }
             joined_params = "&".join("{0}={1}".format(k, v) for k, v in params.items())
 
@@ -120,9 +132,15 @@ def get_incidents(console_name, console_url, project_list, auth_token):
                 break
 
             for incident in response_json:
-                current_serialNum = incident["serialNum"]
+                # current_serialNum = incident["serialNum"]
+                current_DateTime = dateutil.parser.parser(incident["time"])
                 # Print only new incidents for indexing in Splunk
-                if current_serialNum > last_serialNum_indexed:
+                # We noticed that this condition will not write the output to text file.
+                # Moreover, the condition is always false
+                # if current_serialNum > last_serialNum_indexed:
+                # Check if current_serialNum (0) is greater than last_serialNum_indexed (read file)
+                if current_DateTime > last_date_indexed:
+                # if current_serialNum >= last_serialNum_indexed: # left variable is zero and right variable is equal to zero at the same time
                     # Add console and project keys for associating in Splunk
                     incident["console"] = console_name
                     incident["project"] = project
@@ -157,13 +175,18 @@ def get_incidents(console_name, console_url, project_list, auth_token):
                 if incident_info not in current_incidents:
                     current_incidents.append(incident_info)
 
-                if current_serialNum > highest_serialNum:
-                    highest_serialNum = current_serialNum
+                # if current_serialNum > highest_serialNum:
+                #     highest_serialNum = current_serialNum
+                if current_DateTime > oldest_date:
+                    oldest_date = current_DateTime
 
         # Update the checkpoint file
-        if highest_serialNum > last_serialNum_indexed:
+        # if highest_serialNum > last_serialNum_indexed:
+        # if highest_serialNum > last_serialNum_indexed:
+        if oldest_date > last_date_indexed:
             with open(checkpoint_file, "w") as f:
-                f.write(str(highest_serialNum))
+                # f.write(str(highest_serialNum))
+                f.write(str(oldest_date))
         else:
             logger.info(
                 "No new incidents to ingest from Console: %s, project: %s. "
