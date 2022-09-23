@@ -22,13 +22,12 @@ def get_credentials(session_key):
 
     credentials = []
     for item in entities.values():
-        if item['realm'] == "Prisma Cloud":
-            credential = {
-                "username": item["username"],
-                "password": item["clear_password"],
-                "realm": item["realm"],
-            }
-            credentials.append(credential)
+        credential = {
+            "username": item["username"],
+            "password": item["clear_password"],
+            "realm": item["realm"],
+        }
+        credentials.append(credential)
     return credentials
 
 
