@@ -38,7 +38,7 @@ except OSError:
 
 
 def get_incidents(console_name, console_url, project_list, auth_token):
-    # v1 refered to latest API version
+    # v1 referred to latest API version
     endpoint = "/api/v1/audits/incidents"
     headers = {
         "Authorization": "Bearer " + auth_token,
